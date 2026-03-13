@@ -1,0 +1,61 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model files (large files)
+# Uncomment if models are too large
+# models/*.pkl
+
+# Data files
+*.csv
+*.sdf
+*.xlsx
+
+# Logs
+*.log
+
+# Temporary files
+pharma_*/
+pharma_demo/
+pharma_complete/
+pharma_models/
+pharma_papers/
+
+# Export files
+pharmaai_export_*.tar.gz
+
+# OS
+.DS_Store
+Thumbs.db
