@@ -15,7 +15,7 @@ import pandas as pd
 # 化学信息学
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Crippen, Lipinski, rdMolDescriptors
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import rdFingerprintGenerator
 
 # 机器学习
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
@@ -28,6 +28,10 @@ import joblib
 
 # 导入CYP450预测器
 from cyp450_prediction import CYP450Predictor
+
+# 初始化Morgan指纹生成器 (避免弃用警告)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+
 
 warnings.filterwarnings('ignore')
 

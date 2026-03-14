@@ -26,7 +26,7 @@ import joblib
 # RDKit
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors, Crippen, Lipinski
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import rdFingerprintGenerator
 
 
 class ChEMBLDataLoader:
@@ -199,7 +199,7 @@ class PretrainedModelTrainer:
         fingerprints = []
         for mol in df['mol']:
             if mol:
-                fp = GetMorganFingerprintAsBitVect(mol, 2, 2048)
+                fp = _morgan_generator.GetFingerprint(mol)
                 fingerprints.append(np.array(fp))
             else:
                 fingerprints.append(np.zeros(2048))
@@ -337,7 +337,7 @@ class PretrainedModelTrainer:
             }
             
             X_desc = np.array([[features[c] for c in desc_cols]])
-            fp = GetMorganFingerprintAsBitVect(mol, 2, 2048)
+            fp = _morgan_generator.GetFingerprint(mol)
             X_fp = np.array([fp])
             X = np.hstack([X_desc, X_fp])
             
@@ -453,6 +453,10 @@ def demo_pretrained_models():
 
 ```python
 from pharma_pretrained_models import PretrainedModelTrainer
+
+# 初始化Morgan指纹生成器 (避免弃用警告)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+
 
 trainer = PretrainedModelTrainer()
 trainer.models['herg'] = joblib.load('./pharma_models/models/herg_model.pkl')

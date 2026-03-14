@@ -20,7 +20,7 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Draw, AllChem, DataStructs
 from rdkit.Chem import PandasTools, Crippen, Lipinski, Fragments, GraphDescriptors
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import rdFingerprintGenerator
 
 # 机器学习
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -30,6 +30,10 @@ from sklearn.metrics import (
     roc_auc_score, confusion_matrix, classification_report
 )
 import joblib
+
+# 初始化Morgan指纹生成器 (避免弃用警告)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+
 
 warnings.filterwarnings('ignore')
 

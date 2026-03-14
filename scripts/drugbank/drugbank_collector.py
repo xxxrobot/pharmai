@@ -27,8 +27,12 @@ import pandas as pd
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Crippen, Lipinski, AllChem
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import rdFingerprintGenerator
 from rdkit import DataStructs
+
+# 初始化Morgan指纹生成器 (避免弃用警告)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+
 
 warnings.filterwarnings('ignore')
 
@@ -425,8 +429,8 @@ class DrugBankDataCollector:
             return 0.0
         
         # 生成Morgan指纹
-        fp1 = GetMorganFingerprintAsBitVect(mol1, 2, 2048)
-        fp2 = GetMorganFingerprintAsBitVect(mol2, 2, 2048)
+        fp1 = _morgan_generator.GetFingerprint(mol1)
+        fp2 = _morgan_generator.GetFingerprint(mol2)
         
         # 计算Tanimoto相似性
         similarity = DataStructs.TanimotoSimilarity(fp1, fp2)

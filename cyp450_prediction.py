@@ -11,8 +11,11 @@ from sklearn.metrics import roc_auc_score, accuracy_score, classification_report
 import joblib
 import os
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Crippen, Lipinski, AllChem
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import Descriptors, Crippen, Lipinski, rdFingerprintGenerator
+import numpy as np
+
+# 初始化Morgan指纹生成器 (全局复用)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
 
 class CYP450Predictor:
     """CYP450抑制预测器"""
@@ -60,7 +63,7 @@ class CYP450Predictor:
         }
         
         # Morgan指纹 (2048位，与现有模型保持一致)
-        fp = GetMorganFingerprintAsBitVect(mol, 2, 2048)
+        fp = _morgan_generator.GetFingerprint(mol)
         features['fingerprint'] = np.array(fp)
         
         return features

@@ -32,7 +32,7 @@ from rdkit.Chem import (
     PandasTools, Crippen, Lipinski, rdMolDescriptors
 )
 from rdkit.Chem.Draw import rdMolDraw2D
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import rdFingerprintGenerator
 
 # 机器学习
 from sklearn.ensemble import (
@@ -45,6 +45,10 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 )
 import joblib
+
+# 初始化Morgan指纹生成器 (避免弃用警告)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+
 
 warnings.filterwarnings('ignore')
 
@@ -270,7 +274,7 @@ class PharmaAICompleteWorkflow:
         fingerprints = []
         for mol in df['mol']:
             if mol:
-                fp = GetMorganFingerprintAsBitVect(mol, 2, 2048)
+                fp = _morgan_generator.GetFingerprint(mol)
                 fingerprints.append(np.array(fp))
             else:
                 fingerprints.append(np.zeros(2048))

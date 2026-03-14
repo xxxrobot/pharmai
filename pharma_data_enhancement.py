@@ -20,11 +20,15 @@ from collections import Counter
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Draw, AllChem, DataStructs
 from rdkit.Chem import PandasTools, Crippen, Lipinski
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+from rdkit.Chem import rdFingerprintGenerator
 
 # 数据获取
 import urllib.request
 import urllib.parse
+
+# 初始化Morgan指纹生成器 (避免弃用警告)
+_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+
 
 warnings.filterwarnings('ignore')
 
