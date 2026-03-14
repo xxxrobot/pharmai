@@ -1,409 +1,234 @@
+#!/usr/bin/env python3
 """
-CYP450预测模块
-基于现有毒性预测框架扩展CYP450抑制预测
+CYP450 抑制预测模块 (兼容层)
+已弃用 - 请使用新的 pharmaai.predictors.cyp450 模块
+
+此模块已迁移到统一架构中，此文件仅为向后兼容而保留
+新代码应导入: from pharmaai.predictors.cyp450 import CYP450Predictor
 """
 
+import warnings
+warnings.warn(
+    "cyp450_prediction.py 已弃用，请使用 pharmaai.predictors.cyp450",
+    DeprecationWarning,
+    stacklevel=2
+)
+
+import sys
+import json
+import pickle
+import logging
+from typing import List, Dict, Any, Optional, Union, Tuple
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import roc_auc_score, accuracy_score, classification_report
-import joblib
-import os
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Crippen, Lipinski, rdFingerprintGenerator
-import numpy as np
 
-# 初始化Morgan指纹生成器 (全局复用)
-_morgan_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+logger = logging.getLogger(__name__)
 
-class CYP450Predictor:
-    """CYP450抑制预测器"""
+# 导入新模块的预测器类以保持 API 兼容
+try:
+    from pharmaai.predictors.cyp450 import CYP450Predictor as NewCYP450Predictor
+    from pharmaai.predictors.cyp450 import create_cyp450_predictor
+except ImportError as e:
+    warnings.warn(f"无法导入新模块: {e}", ImportWarning)
+    # 定义兼容的占位符类，防止导入失败
+    class NewCYP450Predictor:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("CYP450Predictor 需要安装新模块。请使用 pip install -e .")
     
-    def __init__(self, cyp_isoform='CYP3A4'):
-        """
-        初始化CYP450预测器
-        
-        Args:
-            cyp_isoform: CYP亚型 ('CYP3A4', 'CYP2D6', 'CYP2C9')
-        """
-        self.cyp_isoform = cyp_isoform
-        self.model = None
-        self.desc_cols = None
-        self.feature_importance = None
-        
-    def calculate_features(self, smiles):
-        """
-        计算分子特征
-        
-        Args:
-            smiles: SMILES字符串
-            
-        Returns:
-            dict: 特征字典
-        """
-        mol = Chem.MolFromSmiles(smiles)
-        if not mol:
-            return None
-        
-        # 基础描述符 (与现有毒性预测保持一致)
-        features = {
-            'MW': Descriptors.MolWt(mol),
-            'LogP': Crippen.MolLogP(mol),
-            'TPSA': Descriptors.TPSA(mol),
-            'HBD': Lipinski.NumHDonors(mol),
-            'HBA': Lipinski.NumHAcceptors(mol),
-            'RotatableBonds': Lipinski.NumRotatableBonds(mol),
-            'AromaticRings': Lipinski.NumAromaticRings(mol),
-            'HeavyAtoms': mol.GetNumHeavyAtoms(),
-            'NumNitrogens': sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 7),
-            'NumHalogens': sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() in [9, 17, 35, 53]),
-            'NumSulfurs': sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 16),
-            'NumOxygens': sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 8)
-        }
-        
-        # Morgan指纹 (2048位，与现有模型保持一致)
-        fp = _morgan_generator.GetFingerprint(mol)
-        features['fingerprint'] = np.array(fp)
-        
-        return features
+    def create_cyp450_predictor(*args, **kwargs):
+        raise ImportError("create_cyp450_predictor 需要安装新模块。请使用 pip install -e .")
+
+
+# ===== 兼容层: 原始 CYP450Prediction 类 =====
+
+class CYP450Prediction:
+    """
+    CYP450 抑制预测兼容类
     
-    def prepare_features(self, df):
-        """
-        准备特征矩阵
-        
-        Args:
-            df: 包含'smiles'和'is_inhibitor'列的DataFrame
-            
-        Returns:
-            tuple: (X, y) 特征矩阵和标签
-        """
-        X_desc_list = []
-        X_fp_list = []
-        y_list = []
-        
-        desc_cols = ['MW', 'LogP', 'TPSA', 'HBD', 'HBA', 'RotatableBonds', 
-                    'AromaticRings', 'HeavyAtoms', 'NumNitrogens', 
-                    'NumHalogens', 'NumSulfurs', 'NumOxygens']
-        
-        for idx, row in df.iterrows():
-            features = self.calculate_features(row['smiles'])
-            if features:
-                X_desc = [features[col] for col in desc_cols]
-                X_desc_list.append(X_desc)
-                X_fp_list.append(features['fingerprint'])
-                y_list.append(row['is_inhibitor'])
-        
-        if not X_desc_list:
-            return None, None, None
-        
-        X_desc_arr = np.array(X_desc_list)
-        X_fp_arr = np.array(X_fp_list)
-        X = np.hstack([X_desc_arr, X_fp_arr])
-        y = np.array(y_list)
-        
-        self.desc_cols = desc_cols
-        return X, y, desc_cols
+    此类为旧代码提供向后兼容性，实际功能委托给新的 CYP450Predictor
+    """
     
-    def train(self, df, test_size=0.2, random_state=42):
+    def __init__(self, isoform='CYP3A4', model_path=None):
         """
-        训练CYP450预测模型
+        初始化 CYP450 预测器 (兼容版本)
         
         Args:
-            df: 训练数据
+            isoform: CYP亚型 ('CYP3A4', 'CYP2D6', 'CYP2C9')
+            model_path: 模型文件路径（可选）
+        """
+        warnings.warn(
+            "CYP450Prediction 已弃用，请使用 pharmaai.predictors.cyp450.CYP450Predictor",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
+        self.isoform = isoform
+        self.model_path = model_path
+        
+        # 创建新的预测器实例
+        self._predictor = NewCYP450Predictor(isoform=isoform)
+        
+        # 加载模型文件（如果提供）
+        if model_path:
+            self._predictor.load_model(model_path)
+    
+    def train(self, df: pd.DataFrame, test_size=0.2, random_state=42) -> Dict[str, Any]:
+        """
+        训练 CYP450 预测模型 (兼容方法)
+        
+        Args:
+            df: 包含 'smiles' 和 'is_inhibitor' 列的 DataFrame
             test_size: 测试集比例
             random_state: 随机种子
             
         Returns:
-            dict: 训练结果
+            包含训练结果的字典
         """
-        print(f"训练 {self.cyp_isoform} 预测模型...")
-        
-        # 准备特征
-        X, y, desc_cols = self.prepare_features(df)
-        if X is None or len(X) == 0:
-            return {'error': '无法从数据中提取特征'}
-        
-        print(f"  样本数: {len(X)}")
-        print(f"  特征维度: {X.shape[1]}")
-        print(f"  抑制剂比例: {y.sum()}/{len(y)} ({y.sum()/len(y)*100:.1f}%)")
-        
-        # 划分训练集和测试集
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=y
-        )
-        
-        # 训练随机森林模型
-        self.model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
-            min_samples_split=5,
-            min_samples_leaf=2,
-            random_state=random_state,
-            class_weight='balanced'
-        )
-        
-        self.model.fit(X_train, y_train)
-        
-        # 评估模型
-        train_score = self.model.score(X_train, y_train)
-        test_score = self.model.score(X_test, y_test)
-        
-        y_pred = self.model.predict(X_test)
-        y_pred_proba = self.model.predict_proba(X_test)[:, 1]
-        
-        # 计算AUC（需要至少两个类别）
-        if len(np.unique(y_test)) > 1:
-            auc_score = roc_auc_score(y_test, y_pred_proba)
-        else:
-            auc_score = None
-        
-        # 特征重要性
-        self.feature_importance = self.model.feature_importances_
-        
-        # 交叉验证
-        cv_scores = cross_val_score(self.model, X, y, cv=5, scoring='roc_auc')
-        
-        # 构建结果
-        results = {
-            'cyp_isoform': self.cyp_isoform,
-            'train_accuracy': train_score,
-            'test_accuracy': test_score,
-            'auc_score': auc_score,
-            'cv_auc_mean': cv_scores.mean() if len(cv_scores) > 0 else None,
-            'cv_auc_std': cv_scores.std() if len(cv_scores) > 0 else None,
-            'n_samples': len(X),
-            'n_features': X.shape[1],
-            'class_distribution': {
-                'total': len(y),
-                'inhibitors': int(y.sum()),
-                'non_inhibitors': int(len(y) - y.sum())
-            },
-            'classification_report': classification_report(y_test, y_pred, output_dict=True)
-        }
-        
-        print(f"  训练准确率: {train_score:.3f}")
-        print(f"  测试准确率: {test_score:.3f}")
-        if auc_score:
-            print(f"  ROC-AUC: {auc_score:.3f}")
-        if cv_scores.mean():
-            print(f"  交叉验证AUC: {cv_scores.mean():.3f} (±{cv_scores.std():.3f})")
-        
-        return results
+        return self._predictor.train(df, test_size=test_size, random_state=random_state)
     
-    def predict(self, smiles):
+    def predict(self, smiles: str) -> Dict[str, Any]:
         """
-        预测单个分子
+        预测单个分子的 CYP450 抑制作用 (兼容方法)
         
         Args:
-            smiles: SMILES字符串
+            smiles: SMILES 字符串
             
         Returns:
-            dict: 预测结果
+            包含预测结果的字典
         """
-        if not self.model:
-            return {'error': '模型未训练'}
+        result = self._predictor.predict(smiles)
         
-        features = self.calculate_features(smiles)
-        if not features:
-            return {'error': '无效的SMILES'}
-        
-        # 准备特征向量
-        X_desc = np.array([[features[col] for col in self.desc_cols]])
-        X_fp = features['fingerprint'].reshape(1, -1)
-        X = np.hstack([X_desc, X_fp])
-        
-        # 预测
-        prob = self.model.predict_proba(X)[0, 1]
-        pred = self.model.predict(X)[0]
-        
-        # 确定风险等级
-        if prob >= 0.7:
-            risk_level = 'High'
-        elif prob >= 0.3:
-            risk_level = 'Medium'
-        else:
-            risk_level = 'Low'
-        
+        # 转换为旧格式
         return {
             'smiles': smiles,
-            'cyp_isoform': self.cyp_isoform,
-            'probability': float(prob),
-            'prediction': int(pred),
-            'risk_level': risk_level,
-            'interpretation': self._get_interpretation(prob)
+            'is_inhibitor': result.value,
+            'confidence': result.confidence,
+            'isoform': self.isoform,
+            'metadata': result.metadata
         }
     
-    def batch_predict(self, smiles_list):
+    def batch_predict(self, smiles_list: List[str]) -> List[Dict[str, Any]]:
         """
-        批量预测
+        批量预测 (兼容方法)
         
         Args:
-            smiles_list: SMILES列表
+            smiles_list: SMILES 字符串列表
             
         Returns:
-            list: 预测结果列表
+            预测结果列表
         """
-        results = []
-        for smiles in smiles_list:
-            result = self.predict(smiles)
-            results.append(result)
-        return results
+        results = self._predictor.batch_predict(smiles_list)
+        
+        # 转换为旧格式
+        output = []
+        for smiles, result in zip(smiles_list, results):
+            output.append({
+                'smiles': smiles,
+                'is_inhibitor': result.value,
+                'confidence': result.confidence,
+                'isoform': self.isoform,
+                'metadata': result.metadata
+            })
+        return output
     
-    def _get_interpretation(self, probability):
-        """获取解释文本"""
-        if probability >= 0.7:
-            return f"高概率{self.cyp_isoform}抑制剂，可能引起药物相互作用"
-        elif probability >= 0.3:
-            return f"中等概率{self.cyp_isoform}抑制剂，需要注意"
-        else:
-            return f"低概率{self.cyp_isoform}抑制剂，风险较小"
-    
-    def save_model(self, model_dir='models'):
+    def save_model(self, filepath: str) -> bool:
         """
-        保存模型
+        保存模型 (兼容方法)
         
         Args:
-            model_dir: 模型保存目录
+            filepath: 保存路径
+            
+        Returns:
+            是否保存成功
         """
-        if not self.model:
-            print("模型未训练，无法保存")
-            return False
-        
-        os.makedirs(model_dir, exist_ok=True)
-        model_path = os.path.join(model_dir, f'{self.cyp_isoform.lower()}_model.pkl')
-        
-        model_data = {
-            'model': self.model,
-            'desc_cols': self.desc_cols,
-            'cyp_isoform': self.cyp_isoform,
-            'feature_importance': self.feature_importance
-        }
-        
-        joblib.dump(model_data, model_path)
-        print(f"模型已保存到: {model_path}")
-        return True
+        return self._predictor.save_model(filepath)
     
-    def load_model(self, model_path):
+    def load_model(self, filepath: str) -> bool:
         """
-        加载模型
+        加载模型 (兼容方法)
         
         Args:
-            model_path: 模型文件路径
+            filepath: 模型文件路径
+            
+        Returns:
+            是否加载成功
         """
-        if not os.path.exists(model_path):
-            print(f"模型文件不存在: {model_path}")
-            return False
+        self.model_path = filepath
+        return self._predictor.load_model(filepath)
+    
+    def get_feature_importance(self) -> Dict[str, float]:
+        """
+        获取特征重要性 (兼容方法)
         
-        model_data = joblib.load(model_path)
-        self.model = model_data['model']
-        self.desc_cols = model_data['desc_cols']
-        self.cyp_isoform = model_data['cyp_isoform']
-        self.feature_importance = model_data.get('feature_importance')
-        
-        print(f"模型已加载: {model_path}")
-        return True
+        Returns:
+            特征重要性字典
+        """
+        if hasattr(self._predictor, 'feature_importance'):
+            return self._predictor.feature_importance
+        return {}
 
 
-def train_all_cyp450_models(data_dir='data/cyp450/processed'):
+# ===== 兼容层: 原有全局函数 =====
+
+def load_cyp450_model(isoform='CYP3A4', model_path=None) -> CYP450Prediction:
     """
-    训练所有CYP450模型
+    加载 CYP450 模型 (兼容函数)
     
     Args:
-        data_dir: 数据目录
+        isoform: CYP亚型
+        model_path: 模型文件路径
         
     Returns:
-        dict: 所有模型的结果
+        CYP450Prediction 实例
     """
-    results = {}
-    
-    # CYP亚型列表
-    cyp_isoforms = ['CYP3A4', 'CYP2D6', 'CYP2C9']
-    
-    for cyp in cyp_isoforms:
-        print(f"\n{'='*60}")
-        print(f"训练 {cyp} 模型")
-        print(f"{'='*60}")
-        
-        # 查找数据文件
-        data_files = [f for f in os.listdir(data_dir) 
-                     if f.startswith(cyp.lower()) and f.endswith('.csv')]
-        
-        if not data_files:
-            print(f"未找到 {cyp} 数据文件")
-            continue
-        
-        # 使用最新的数据文件
-        data_file = os.path.join(data_dir, sorted(data_files)[-1])
-        print(f"使用数据文件: {data_file}")
-        
-        # 加载数据
-        df = pd.read_csv(data_file)
-        
-        # 检查必要列
-        required_cols = ['smiles', 'is_inhibitor']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            print(f"数据文件缺少列: {missing_cols}")
-            continue
-        
-        # 训练模型
-        predictor = CYP450Predictor(cyp_isoform=cyp)
-        result = predictor.train(df)
-        
-        if 'error' not in result:
-            # 保存模型
-            predictor.save_model('models')
-            results[cyp] = result
-        else:
-            print(f"训练失败: {result['error']}")
-    
-    return results
+    warnings.warn(
+        "load_cyp450_model 已弃用，请使用 pharmaai.predictors.cyp450.create_cyp450_predictor",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return CYP450Prediction(isoform=isoform, model_path=model_path)
 
 
-if __name__ == "__main__":
-    print("CYP450预测模块测试")
-    print("="*60)
+def predict_cyp450_inhibition(smiles: str, isoform='CYP3A4', model_path=None) -> Dict[str, Any]:
+    """
+    预测 CYP450 抑制作用 (兼容函数)
     
-    # 测试示例
-    test_smiles = [
-        'CC(C)Cc1ccc(cc1)C(C)C(=O)O',  # 布洛芬
-        'CN1CCOC(=O)C(c2ccccc2)c2ccccc21',  # 酮康唑 (CYP3A4抑制剂)
-        'COC1=CC=CC=C1OC',  # 帕罗西汀 (CYP2D6抑制剂)
-    ]
+    Args:
+        smiles: SMILES 字符串
+        isoform: CYP亚型
+        model_path: 模型文件路径
+        
+    Returns:
+        包含预测结果的字典
+    """
+    warnings.warn(
+        "predict_cyp450_inhibition 已弃用，请使用 pharmaai.predictors.cyp450.CYP450Predictor",
+        DeprecationWarning,
+        stacklevel=2
+    )
     
-    # 首先检查是否有数据并训练模型
-    data_dir = 'data/cyp450/processed'
-    if os.path.exists(data_dir) and len(os.listdir(data_dir)) > 0:
-        print("发现CYP450数据，开始训练模型...")
-        results = train_all_cyp450_models(data_dir)
-        
-        print("\n训练结果汇总:")
-        for cyp, result in results.items():
-            print(f"\n{cyp}:")
-            print(f"  测试准确率: {result.get('test_accuracy', 'N/A'):.3f}")
-            print(f"  AUC分数: {result.get('auc_score', 'N/A'):.3f}")
-            print(f"  样本数: {result.get('n_samples', 'N/A')}")
-    else:
-        print("未找到CYP450数据，使用示例数据进行演示...")
-        
-        # 创建并训练一个演示模型
-        from create_sample_data import create_sample_cyp450_data
-        df = create_sample_cyp450_data()
-        cyp3a4_df = df[df['cyp_isoform'] == 'CYP3A4']
-        
-        if len(cyp3a4_df) > 0:
-            predictor = CYP450Predictor('CYP3A4')
-            result = predictor.train(cyp3a4_df)
-            
-            print(f"\n演示模型训练结果:")
-            print(f"  测试准确率: {result.get('test_accuracy', 'N/A'):.3f}")
-            
-            # 测试预测
-            print(f"\n预测测试:")
-            for smiles in test_smiles:
-                prediction = predictor.predict(smiles)
-                print(f"  {smiles[:30]}...: {prediction.get('risk_level', 'N/A')} "
-                      f"(概率: {prediction.get('probability', 'N/A'):.3f})")
-    
-    print("\nCYP450预测模块测试完成!")
+    predictor = CYP450Prediction(isoform=isoform, model_path=model_path)
+    return predictor.predict(smiles)
+
+
+# ===== 保持原有模块属性 =====
+
+__all__ = [
+    'CYP450Prediction',
+    'load_cyp450_model',
+    'predict_cyp450_inhibition',
+    'CYP450Predictor',  # 新预测器类（如果导入成功）
+    'create_cyp450_predictor'  # 新创建函数（如果导入成功）
+]
+
+# 如果新预测器导入成功，将其导出
+try:
+    CYP450Predictor = NewCYP450Predictor
+except NameError:
+    pass
+
+if __name__ == '__main__':
+    # 兼容性测试
+    print("CYP450 预测模块兼容层已加载")
+    print("注意: 此模块已弃用，请迁移到 pharmaai.predictors.cyp450")
