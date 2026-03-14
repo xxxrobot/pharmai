@@ -22,6 +22,7 @@ try:
     from pharma_data_enhancement import DataEnhancement
     from pharma_toxicity_prediction import ToxicityPrediction
     from pharma_admet_prediction import ADMETPrediction
+    from pharma_admet_enhanced_fixed import EnhancedADMETPrediction
     WORKFLOW_AVAILABLE = True
 except ImportError as e:
     WORKFLOW_AVAILABLE = False
@@ -144,7 +145,7 @@ def main():
         page = st.radio(
             "选择功能",
             ["🏠 首页", "📊 数据上传", "🔬 分子分析", "⚠️ 毒性预测", 
-             "💊 ADMET预测", "🔍 虚拟筛选", "📈 结果展示"]
+             "💊 ADMET预测", "🧬 CYP450预测", "🔍 虚拟筛选", "📈 结果展示"]
         )
         
         st.markdown("---")
@@ -169,6 +170,8 @@ def main():
         show_toxicity_prediction()
     elif page == "💊 ADMET预测":
         show_admet_prediction()
+    elif page == "🧬 CYP450预测":
+        show_cyp450_prediction()
     elif page == "🔍 虚拟筛选":
         show_virtual_screening()
     elif page == "📈 结果展示":
@@ -209,6 +212,15 @@ def show_home():
         - 综合风险评估
         """)
     
+    with st.columns(3)[1]:
+        st.markdown("""
+        ### 🧬 CYP450预测
+        - 多亚型抑制预测
+        - DDI风险评估
+        - 药物相互作用
+        - 临床安全性评估
+        """)
+    
     # 统计数据
     st.markdown("---")
     st.subheader("📈 平台统计")
@@ -223,7 +235,7 @@ def show_home():
     
     with col2:
         st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.markdown('<div class="metric-value">6</div>', unsafe_allow_html=True)
+        st.markdown('<div class="metric-value">9</div>', unsafe_allow_html=True)
         st.markdown('<div class="metric-label">预测模型</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -248,7 +260,8 @@ def show_home():
     2. **分子分析**: 在"🔬 分子分析"页面查看分子性质
     3. **毒性预测**: 在"⚠️ 毒性预测"页面评估安全性
     4. **ADMET预测**: 在"💊 ADMET预测"页面预测药代动力学
-    5. **虚拟筛选**: 在"🔍 虚拟筛选"页面筛选最佳候选
+    5. **CYP450预测**: 在"🧬 CYP450预测"页面评估药物相互作用
+    6. **虚拟筛选**: 在"🔍 虚拟筛选"页面筛选最佳候选
     """)
     
     # 示例数据下载
@@ -560,6 +573,142 @@ def show_admet_prediction():
         
         if available_cols:
             st.dataframe(df[available_cols])
+
+
+def show_cyp450_prediction():
+    """CYP450预测页面"""
+    st.header("🧬 CYP450抑制预测")
+    st.markdown("预测分子对CYP450酶的抑制活性，评估药物相互作用(DDI)风险")
+    
+    if 'data' not in st.session_state:
+        st.warning("⚠️ 请先上传数据")
+        return
+    
+    df = st.session_state['data']
+    
+    # 显示可用模型状态
+    st.subheader("模型状态")
+    
+    # 检查模型文件
+    models_available = {
+        'CYP3A4': os.path.exists('models/cyp3a4_model.pkl'),
+        'CYP2D6': os.path.exists('models/cyp2d6_model.pkl'),
+        'CYP2C9': os.path.exists('models/cyp2c9_model.pkl')
+    }
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        status = "✅ 可用" if models_available['CYP3A4'] else "❌ 不可用"
+        st.metric("CYP3A4模型", status)
+    with col2:
+        status = "✅ 可用" if models_available['CYP2D6'] else "❌ 不可用"
+        st.metric("CYP2D6模型", status)
+    with col3:
+        status = "✅ 可用" if models_available['CYP2C9'] else "❌ 不可用"
+        st.metric("CYP2C9模型", status)
+    
+    if not any(models_available.values()):
+        st.error("❌ 没有可用的CYP450模型，请先训练模型")
+        return
+    
+    if st.button("🔮 运行CYP450抑制预测", type="primary"):
+        with st.spinner("正在预测CYP450抑制活性..."):
+            try:
+                # 初始化增强版ADMET预测器
+                enhanced = EnhancedADMETPrediction(output_dir="./pharma_web")
+                
+                if not enhanced.cyp_predictors:
+                    st.error("❌ 无法加载CYP450预测器")
+                    return
+                
+                # 批量预测
+                smiles_list = df['smiles'].tolist()
+                results_df = enhanced.batch_predict_cyp_inhibition(smiles_list)
+                
+                if not results_df.empty:
+                    # 合并结果
+                    for col in ['CYP3A4_is_inhibitor', 'CYP2D6_is_inhibitor', 'CYP2C9_is_inhibitor', 'ddi_risk_level']:
+                        if col in results_df.columns:
+                            df[col] = results_df[col].values
+                    
+                    st.session_state['data'] = df
+                    st.session_state['cyp450_done'] = True
+                    
+                    st.success(f"✅ CYP450预测完成! 处理了 {len(results_df)} 个分子")
+                else:
+                    st.error("❌ 预测失败，无有效结果")
+                
+            except Exception as e:
+                st.error(f"❌ 预测失败: {e}")
+                import traceback
+                st.error(traceback.format_exc())
+    
+    if st.session_state.get('cyp450_done'):
+        df = st.session_state['data']
+        
+        st.subheader("CYP450抑制预测结果")
+        
+        # 显示结果表格
+        display_cols = ['smiles']
+        cyp_cols = ['CYP3A4_is_inhibitor', 'CYP2D6_is_inhibitor', 'CYP2C9_is_inhibitor', 'ddi_risk_level']
+        available_cols = [c for c in cyp_cols if c in df.columns]
+        display_cols.extend(available_cols)
+        
+        if available_cols:
+            result_df = df[display_cols].copy()
+            
+            # 格式化显示
+            for col in ['CYP3A4_is_inhibitor', 'CYP2D6_is_inhibitor', 'CYP2C9_is_inhibitor']:
+                if col in result_df.columns:
+                    result_df[col] = result_df[col].apply(
+                        lambda x: "🚫 抑制剂" if x else "✅ 非抑制剂" if pd.notna(x) else "❓ 未知"
+                    )
+            
+            if 'ddi_risk_level' in result_df.columns:
+                def format_ddi_risk(risk):
+                    if risk == '高':
+                        return "🔴 高"
+                    elif risk == '中':
+                        return "🟡 中"
+                    elif risk == '低':
+                        return "🟢 低"
+                    else:
+                        return "⚪ 未知"
+                result_df['ddi_risk_level'] = result_df['ddi_risk_level'].apply(format_ddi_risk)
+            
+            st.dataframe(result_df)
+            
+            # 统计
+            st.subheader("抑制统计")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if 'CYP3A4_is_inhibitor' in df.columns:
+                    count = df['CYP3A4_is_inhibitor'].sum()
+                    st.metric("CYP3A4抑制剂", f"{count}/{len(df)}")
+            
+            with col2:
+                if 'CYP2D6_is_inhibitor' in df.columns:
+                    count = df['CYP2D6_is_inhibitor'].sum()
+                    st.metric("CYP2D6抑制剂", f"{count}/{len(df)}")
+            
+            with col3:
+                if 'CYP2C9_is_inhibitor' in df.columns:
+                    count = df['CYP2C9_is_inhibitor'].sum()
+                    st.metric("CYP2C9抑制剂", f"{count}/{len(df)}")
+            
+            with col4:
+                if 'ddi_risk_level' in df.columns:
+                    high_risk = (df['ddi_risk_level'] == '高').sum()
+                    st.metric("高DDI风险", f"{high_risk}/{len(df)}")
+            
+            # DDI风险分布
+            if 'ddi_risk_level' in df.columns:
+                st.write("**DDI风险分布**")
+                risk_counts = df['ddi_risk_level'].value_counts()
+                st.bar_chart(risk_counts)
+        else:
+            st.warning("⚠️ 无CYP450预测结果可显示")
 
 
 def show_virtual_screening():
